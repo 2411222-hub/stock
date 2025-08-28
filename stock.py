@@ -20,49 +20,51 @@ MIN_PRICE = 100
 MAX_PRICE = 1_000_000
 HISTORY_LIMIT = 100 # 그래프에 표시할 데이터 최대 개수
 
-# --- 세션 상태 초기화 ---
+# --- 게임 상태 관리 함수 ---
+
 def initialize_game():
-    if 'initialized' not in st.session_state:
-        st.session_state.cash = 100_000
-        st.session_state.portfolio = {company: 0 for company in COMPANIES}
-        
-        # 초기 주가 및 히스토리 설정
-        prices = {}
-        price_history = {}
-        for company in COMPANIES:
-            initial_price = random.randint(1000, 50000)
-            prices[company] = initial_price
-            price_history[company] = [initial_price] # 개별 그래프를 위한 히스토리
-        
-        st.session_state.stock_prices = prices
-        st.session_state.previous_prices = prices.copy()
-        st.session_state.stock_price_history = price_history # 히스토리 세션 상태에 저장
+    """게임 최초 실행 시 모든 상태를 초기화하는 함수"""
+    st.session_state.cash = 100_000
+    st.session_state.portfolio = {company: 0 for company in COMPANIES}
+    
+    prices = {}
+    price_history = {}
+    for company in COMPANIES:
+        initial_price = random.randint(1000, 50000)
+        prices[company] = initial_price
+        price_history[company] = [initial_price]
+    
+    st.session_state.stock_prices = prices
+    st.session_state.previous_prices = prices.copy()
+    st.session_state.stock_price_history = price_history
 
-        st.session_state.log = ["게임이 시작되었습니다."]
-        st.session_state.asset_history = [100_000]
-        st.session_state.initialized = True
+    st.session_state.log = ["게임이 시작되었습니다."]
+    st.session_state.asset_history = [100_000]
+    st.session_state.initialized = True # 초기화 완료 플래그
 
-# --- 주가 업데이트 함수 ---
 def update_prices():
+    """두 번째 실행부터 주가를 업데이트하는 함수"""
     st.session_state.previous_prices = st.session_state.stock_prices.copy()
     new_prices = {}
     for company, price in st.session_state.stock_prices.items():
-        max_change = int(price * 0.1) # 최대 10% 변동
-        change = random.randint(-max_change, max_change)
+        max_change = int(price * 0.1)
+        change = random.randint(-max_change, max_change) if max_change > 0 else 0
         new_price = price + change
         new_price = max(MIN_PRICE, min(MAX_PRICE, new_price))
         new_prices[company] = new_price
         
-        # 주가 히스토리 업데이트 및 최적화
         history = st.session_state.stock_price_history[company]
         history.append(new_price)
-        st.session_state.stock_price_history[company] = history[-HISTORY_LIMIT:] # 최근 100개만 저장
+        st.session_state.stock_price_history[company] = history[-HISTORY_LIMIT:]
 
     st.session_state.stock_prices = new_prices
 
-# 게임 초기화 및 가격 업데이트
-initialize_game()
-update_prices()
+# --- 스크립트 실행 로직 ---
+# 이 부분이 핵심적인 수정사항입니다.
+if 'initialized' not in st.session_state:
+    initialize_game()
+else:
+    update_prices()
 
 # --- UI 구성 ---
 st.title("📈 실시간 주식 거래 게임")
@@ -73,10 +75,11 @@ portfolio_value = sum(
     st.session_state.portfolio[c] * st.session_state.stock_prices[c] for c in COMPANIES
 )
 total_assets = st.session_state.cash + portfolio_value
-# 자산 히스토리도 최적화
-st.session_state.asset_history.append(total_assets)
-st.session_state.asset_history = st.session_state.asset_history[-HISTORY_LIMIT:]
 
+# 자산 히스토리 업데이트 (최초 실행 시 중복 추가 방지)
+if len(st.session_state.asset_history) == 0 or st.session_state.asset_history[-1] != total_assets:
+    st.session_state.asset_history.append(total_assets)
+    st.session_state.asset_history = st.session_state.asset_history[-HISTORY_LIMIT:]
 
 col1, col2, col3 = st.columns(3)
 col1.metric("💰 현금", f"{st.session_state.cash:,.0f} 원")
@@ -95,10 +98,9 @@ market_col, portfolio_col = st.columns([0.6, 0.4])
 with market_col:
     st.subheader(f"주식 시장 (1.5초마다 업데이트)")
     for company in COMPANIES:
-        # 컨테이너와 보더를 사용해 각 주식 정보를 시각적으로 구분
         with st.container(border=True):
             price = st.session_state.stock_prices[company]
-            prev_price = st.session_state.previous_prices[company]
+            prev_price = st.session_state.previous_prices.get(company, price) # .get으로 안전하게 접근
             price_change = price - prev_price
             price_delta = f"{price_change:+,d} 원" if price_change != 0 else ""
 
@@ -107,10 +109,8 @@ with market_col:
                 st.markdown(f"**{company}**")
                 st.metric("현재가", f"{price:,d} 원", delta=price_delta)
             with c2:
-                # 개별 주식 그래프 표시
                 st.line_chart(st.session_state.stock_price_history[company], height=100)
 
-            # 매수/매도 폼
             with st.form(key=f"form_{company}"):
                 quantity = st.number_input("수량", min_value=1, step=1, key=f"q_{company}")
                 f_col1, f_col2 = st.columns(2)
@@ -147,10 +147,8 @@ with portfolio_col:
             current_price = st.session_state.stock_prices[company]
             value = shares * current_price
             portfolio_data.append({
-                "회사명": company,
-                "보유 수량": shares,
-                "현재가": f"{current_price:,.0f}",
-                "평가액": f"{value:,.0f}"
+                "회사명": company, "보유 수량": shares,
+                "현재가": f"{current_price:,.0f}", "평가액": f"{value:,.0f}"
             })
 
     if not portfolio_data:
