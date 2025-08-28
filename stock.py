@@ -20,10 +20,11 @@ MIN_PRICE = 100
 MAX_PRICE = 1_000_000
 HISTORY_LIMIT = 100 # 그래프에 표시할 데이터 최대 개수
 
-# --- 게임 상태 관리 함수 ---
+# --- 게임 상태 관리 ---
 
-def initialize_game():
-    """게임 최초 실행 시 모든 상태를 초기화하는 함수"""
+# st.session_state에 stock_prices가 없으면 게임 첫 실행으로 간주하고 초기화
+if 'stock_prices' not in st.session_state:
+    st.toast("🚀 게임을 처음으로 시작합니다!", icon="🎉")
     st.session_state.cash = 100_000
     st.session_state.portfolio = {company: 0 for company in COMPANIES}
     
@@ -40,10 +41,9 @@ def initialize_game():
 
     st.session_state.log = ["게임이 시작되었습니다."]
     st.session_state.asset_history = [100_000]
-    st.session_state.initialized = True # 초기화 완료 플래그
 
-def update_prices():
-    """두 번째 실행부터 주가를 업데이트하는 함수"""
+# stock_prices가 이미 있다면, 두 번째 실행부터이므로 주가를 업데이트
+else:
     st.session_state.previous_prices = st.session_state.stock_prices.copy()
     new_prices = {}
     for company, price in st.session_state.stock_prices.items():
@@ -58,13 +58,8 @@ def update_prices():
         st.session_state.stock_price_history[company] = history[-HISTORY_LIMIT:]
 
     st.session_state.stock_prices = new_prices
-
-# --- 스크립트 실행 로직 ---
-# 이 부분이 핵심적인 수정사항입니다.
-if 'initialized' not in st.session_state:
-    initialize_game()
-else:
-    update_prices()
+    # 업데이트가 실행되었다는 시각적 피드백
+    st.toast("주가 업데이트 완료!", icon="⚙️")
 
 # --- UI 구성 ---
 st.title("📈 실시간 주식 거래 게임")
@@ -76,7 +71,7 @@ portfolio_value = sum(
 )
 total_assets = st.session_state.cash + portfolio_value
 
-# 자산 히스토리 업데이트 (최초 실행 시 중복 추가 방지)
+# 자산 히스토리 업데이트
 if len(st.session_state.asset_history) == 0 or st.session_state.asset_history[-1] != total_assets:
     st.session_state.asset_history.append(total_assets)
     st.session_state.asset_history = st.session_state.asset_history[-HISTORY_LIMIT:]
@@ -100,7 +95,7 @@ with market_col:
     for company in COMPANIES:
         with st.container(border=True):
             price = st.session_state.stock_prices[company]
-            prev_price = st.session_state.previous_prices.get(company, price) # .get으로 안전하게 접근
+            prev_price = st.session_state.previous_prices.get(company, price)
             price_change = price - prev_price
             price_delta = f"{price_change:+,d} 원" if price_change != 0 else ""
 
@@ -157,7 +152,4 @@ with portfolio_col:
         st.dataframe(pd.DataFrame(portfolio_data).set_index("회사명"), use_container_width=True)
     
     st.subheader("거래 기록")
-    st.text_area("log", value="\n".join(st.session_state.log), height=200, disabled=True)
-
-# --- 1.5초마다 자동 새로고침 ---
-st.html("<meta http-equiv='refresh' content='1.5'>")
+    st.text_area("log", value="\n".join(
